@@ -10,27 +10,29 @@ Options:
     -d, --debug                  Enable debug output
 """
 
-import logging
 import functools
+import logging
 import os
-import core.state as state
 import traceback
+import sys
 from shlex import split
+
 from docopt import docopt, DocoptExit
-from core.listeners import Listeners
-from core.sessions import Sessions
-from core.modules import Modules
-from core.stagers import Stagers
-from core.utils import command, print_bad, print_good, print_info
-from terminaltables import AsciiTable
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.application import run_in_terminal
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.application import run_in_terminal
 from prompt_toolkit.styles import Style
 from termcolor import colored
+from terminaltables import AsciiTable
+
+import core.state as state
+from core.listeners import Listeners
+from core.modules import Modules
+from core.sessions import Sessions
+from core.stagers import Stagers
+from core.utils import print_bad, print_banner
 
 rprompt_style = Style.from_dict({
     'rprompt': 'bg:#ff0066 #ffffff',
@@ -53,14 +55,13 @@ class CmdLoop:
 
     def __init__(self):
         self.name = 'main'
-        self.completer = WordCompleter(['listeners', 'sessions', 'modules', 'stagers', 'exit'], ignore_case=True)
         self.prompt_session = PromptSession(
             'ST ≫ ',
             bottom_toolbar=bottom_toolbar,
-            completer=self.completer,
-            auto_suggest=AutoSuggestFromHistory()
-            #rprompt=get_rprompt,
-            #style=rprompt_style
+            auto_suggest=AutoSuggestFromHistory(),
+            enable_history_search=True,
+            # rprompt=get_rprompt,
+            # style=rprompt_style
         )
 
         self.contexts = [
@@ -69,6 +70,9 @@ class CmdLoop:
             Modules(self.prompt_session),
             Stagers(self.prompt_session)
         ]
+
+        self.prompt_session.completer = WordCompleter([ctx.name for ctx in self.contexts] + ['exit'], ignore_case=True)
+        self.prompt_session.contexts = self.contexts
 
         self.current_context = self
 
@@ -113,38 +117,47 @@ class CmdLoop:
             result = self.prompt_session.prompt()
             if result == 'exit':
                 break
+            elif result == 'help':
+                table_data = [
+                    ["Command", "Description"]
+                ]
+
+                try:
+                    for cmd in self.current_context._cmd_registry:
+                        table_data.append([cmd, getattr(self.current_context, cmd).__doc__.split('\n', 2)[1].strip()])
+
+                    for menu in self.contexts:
+                        if menu.name != self.current_context.name:
+                            table_data.append([menu.name, menu.description])
+                except AttributeError:
+                    for menu in self.contexts:
+                        table_data.append([menu.name, menu.description])
+
+                table = AsciiTable(table_data)
+                print(table.table)
+                continue
 
             self.parse_result(result)
 
 
 if __name__ == "__main__":
+    codename = "尻目"
+    version = "0.1.0dev"
 
-    codename = "Ánima"
-    version = "0.0.1dev"
-
-    banner = f"""
-   _____ ______    _______   __________________  _____   ______________  __
-  / ___//  _/ /   / ____/ | / /_  __/_  __/ __ \/  _/ | / /  _/_  __/\ \/ /
-  \__ \ / // /   / __/ /  |/ / / /   / / / /_/ // //  |/ // /  / /    \  /
- ___/ // // /___/ /___/ /|  / / /   / / / _, _// // /|  // /  / /     / /
-/____/___/_____/_____/_/ |_/ /_/   /_/ /_/ |_/___/_/ |_/___/ /_/     /_/
-
-                         Codename: {colored(codename, "yellow")}
-                         Version: {colored(version, "yellow")}
-"""
     args = docopt(__doc__, version=f"{codename} - {version}")
-
     state.args = args
-
-    os.system('cls' if os.name == 'nt' else 'clear')
 
     logging.basicConfig(
         format="%(asctime)s %(process)d %(threadName)s - [%(levelname)s] %(filename)s: %(funcName)s - %(message)s",
-        level=logging.DEBUG if args['--debug'] else logging.INFO
+        level=logging.DEBUG if args['--debug'] else logging.INFO,
+        filename='./logs/ST.log',
+        filemode='a'
     )
 
-    logging.info(args)
+    logging.debug(args)
 
-    print(banner)
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print_banner(codename, version)
+
     loop = CmdLoop()
     loop()

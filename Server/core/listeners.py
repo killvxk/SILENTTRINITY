@@ -1,14 +1,15 @@
 import core.state as state
-from core.events import GET_LISTENERS
+import core.events as events
 from core.ipcserver import ipc_server
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.completion import WordCompleter
-from core.utils import command, print_good, print_bad, print_good
+from core.utils import command, register_cli_commands, print_good, print_bad, print_good
+from core.completers import STCompleter
 from core.loader import Loader
 from terminaltables import AsciiTable
 from copy import deepcopy
 
 
+@register_cli_commands
 class Listeners(Loader):
     def __init__(self, prompt_session):
         Loader.__init__(self)
@@ -17,18 +18,25 @@ class Listeners(Loader):
         self.listeners = []
 
         self.name = 'listeners'
+        self.description = 'Listener menu'
         self.prompt = HTML('ST (<ansired>listeners</ansired>) ≫ ')
-        self.completer = WordCompleter(['start', 'set', 'sessions', 'modules', 'stagers', 'options', 'use', 'exit', 'list'], ignore_case=True)
+        self.completer = STCompleter(self)
         self.prompt_session = prompt_session
 
         self.selected = None
 
-        ipc_server.attach(GET_LISTENERS, self.__get_running_listeners)
+        ipc_server.attach(events.GET_LISTENERS, self.get_listeners)
 
         self.get_loadables()
 
-    def __get_running_listeners(self, msg):
-        return self.listeners
+    def get_listeners(self, name):
+        if name:
+            try:
+                return list(filter(lambda listener: listener.name == name, self.listeners))[0]
+            except IndexError:
+                return
+        else:
+            return self.listeners
 
     @command
     def list(self, name: str, running: bool, available: bool):
@@ -60,7 +68,7 @@ class Listeners(Loader):
             ["Type", "Name", "URL"]
         ]
         for l in self.listeners:
-            table_data.append([l.name, l["Name"], f"https://{l['BindIP']}:{l['Port']}"])
+            table_data.append([l.name, l["Name"], f"{l.name}://{l['BindIP']}:{l['Port']}"])
 
         table = AsciiTable(table_data, title="Running")
         table.inner_row_border = True
@@ -80,10 +88,7 @@ class Listeners(Loader):
         for l in self.loaded:
             if l.name == name.lower():
                 self.selected = deepcopy(l)
-
-                new_prompt = HTML(f"ST (<ansired>listeners</ansired>)(<ansired>{l.name}</ansired>) ≫ ")
-                self.prompt_session.message = new_prompt
-                self.prompt = new_prompt
+                self.prompt_session.message = self.prompt = HTML(f"ST (<ansired>listeners</ansired>)(<ansired>{l.name}</ansired>) ≫ ")
 
     @command
     def options(self):
